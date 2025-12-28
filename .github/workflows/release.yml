@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    concurrency: release
+    permissions:
+      id-token: write
+      contents: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install python-semantic-release
+        run: pip install python-semantic-release
+
+      - name: Get latest tag before release
+        id: before
+        run: echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo 'none')" >> "$GITHUB_OUTPUT"
+
+      - name: Semantic Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: semantic-release version --tag --vcs-release --no-commit --no-changelog --skip-build
+
+      - name: Get latest tag after release
+        id: after
+        run: |
+          git fetch --tags
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo 'none')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          VERSION=${TAG#v}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$TAG" != "${{ steps.before.outputs.tag }}" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up QEMU
+        if: steps.after.outputs.released == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.after.outputs.released == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: steps.after.outputs.released == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        if: steps.after.outputs.released == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.after.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.after.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.after.outputs.tag }}
+            type=raw,value=latest
+
+      - name: Build and push
+        if: steps.after.outputs.released == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.after.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":configMigration",
+    ":semanticCommits",
+    ":automergeMinor",
+    "docker:enableMajor"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["pep621"],
+      "rangeStrategy": "bump"
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "automerge": true
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "groupName": "docker images"
+    }
+  ]
+}
+

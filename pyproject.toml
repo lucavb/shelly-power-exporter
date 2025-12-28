@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shelly-power-exporter"
+dynamic = ["version"]
+description = "Prometheus exporter for Shelly Gen2+ devices with power metering"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Luca Becker" }
+]
+dependencies = [
+    "aioshelly>=13.23.0",
+    "prometheus-client>=0.23.1",
+    "aiohttp>=3.10.0",
+]
+
+[project.scripts]
+shelly-power-exporter = "main:main"
+
+[tool.setuptools]
+py-modules = ["main", "config", "metrics", "collector", "version"]
+
+[tool.setuptools_scm]
+# Dynamic versioning from git tags
+
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.400",
+    "ruff>=0.9.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+
+[tool.semantic_release]
+version_source = "tag"
+tag_format = "v{version}"
+commit = false
+
+[tool.semantic_release.remote]
+type = "github"
