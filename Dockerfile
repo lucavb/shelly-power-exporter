@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim@sha256:6fc12e5d7e7714cbde63532489515adb128632d6ba8c502b52bd30bc064419bb AS builder
 
 ARG VERSION=0.0.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SHELLY_POWER_EXPORTER=${VERSION}
@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm@sha256:404ca55875fc24a64f0a09e9ec7d405d725109aec04c9bf0991798fd45c7b898
 
 WORKDIR /app
 
