@@ -7,7 +7,7 @@ name = "shelly-power-exporter"
 dynamic = ["version"]
 description = "Prometheus exporter for Shelly Gen2+ devices with power metering"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 authors = [
     { name = "Luca Becker" }
 ]
@@ -37,13 +37,13 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pyright]
-pythonVersion = "3.11"
+pythonVersion = "3.14"
 typeCheckingMode = "basic"
 
 [tool.semantic_release]
