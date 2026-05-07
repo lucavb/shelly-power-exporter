@@ -14,7 +14,7 @@ authors = [
 dependencies = [
     "aioshelly>=13.23.1",
     "prometheus-client>=0.24.1",
-    "aiohttp>=3.13.3",
+    "aiohttp>=3.13.5",
 ]
 
 [project.scripts]
