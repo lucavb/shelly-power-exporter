@@ -1,8 +1,9 @@
 import logging
+from dataclasses import dataclass
 
 from aioshelly.rpc_device import RpcDevice
 
-from config import STALE_AFTER_FAILURES
+from config import RECONNECT_AFTER_POLL_FAILURES, STALE_AFTER_FAILURES
 from metrics import (
     register_device_channel,
     reset_instant_metrics,
@@ -25,7 +26,22 @@ logger = logging.getLogger(__name__)
 _consecutive_failures = 0
 
 
-async def collect_metrics(device: RpcDevice) -> None:
+def reset_poll_failure_counter() -> None:
+    """Clear consecutive poll failure count (call after a new connection is established)."""
+    global _consecutive_failures
+    _consecutive_failures = 0
+
+
+@dataclass(frozen=True)
+class PollResult:
+    """Outcome of a single poll cycle."""
+
+    ok: bool
+    recycle_connection: bool
+    consecutive_poll_failures: int = 0
+
+
+async def collect_metrics(device: RpcDevice) -> PollResult:
     """Poll device and update Prometheus metrics."""
     global _consecutive_failures
 
@@ -52,7 +68,16 @@ async def collect_metrics(device: RpcDevice) -> None:
         if STALE_AFTER_FAILURES > 0 and _consecutive_failures >= STALE_AFTER_FAILURES:
             logger.warning("Resetting instant metrics after %d failures", _consecutive_failures)
             reset_instant_metrics(mac)
-        return
+
+        recycle = (
+            RECONNECT_AFTER_POLL_FAILURES > 0
+            and _consecutive_failures >= RECONNECT_AFTER_POLL_FAILURES
+        )
+        return PollResult(
+            ok=False,
+            recycle_connection=recycle,
+            consecutive_poll_failures=_consecutive_failures,
+        )
 
     # Update metrics from device status
     status = device.status
@@ -109,3 +134,4 @@ async def collect_metrics(device: RpcDevice) -> None:
                 logger.error("Error parsing channel from key %s: %s", key, e)
 
     logger.debug("Updated metrics for device %s", mac)
+    return PollResult(ok=True, recycle_connection=False, consecutive_poll_failures=0)

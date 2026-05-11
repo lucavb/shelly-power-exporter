@@ -52,7 +52,18 @@ services:
 | `METRICS_PORT` | 9102 | Port for Prometheus metrics endpoint |
 | `SCRAPE_INTERVAL` | 15 | Seconds between data fetches |
 | `STALE_AFTER_FAILURES` | 3 | Reset instant metrics to 0 after N consecutive failures (0 = disable) |
+| `RECONNECT_AFTER_POLL_FAILURES` | 5 | After N consecutive failed polls, close the RPC connection and reconnect (0 = disable) |
+| `RECONNECT_BACKOFF_SECONDS` | 2 | Initial backoff (seconds) after a failed `initialize()`; doubles up to the max |
+| `RECONNECT_BACKOFF_MAX_SECONDS` | 120 | Cap for reconnect backoff after init failures |
+| `EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS` | 0 | Exit with non-zero status if no successful poll for this many seconds (0 = never; use with Kubernetes restart) |
+| `EXIT_AFTER_CONSECUTIVE_INIT_FAILURES` | 0 | Exit after this many failed `initialize()` attempts in a row (0 = never) |
 | `DEBUG` | false | Enable debug logging |
+
+### Connection recovery
+
+If the Shelly RPC session gets into a bad state (for example repeated `Not connected` errors), the exporter recreates the device after `RECONNECT_AFTER_POLL_FAILURES` consecutive poll failures. Failed reconnects use exponential backoff between attempts.
+
+To let the orchestrator restart the process when the device stays unreachable, set `EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS` and/or `EXIT_AFTER_CONSECUTIVE_INIT_FAILURES` to positive values.
 
 ## Metrics
 
