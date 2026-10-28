@@ -1,0 +1,14 @@
+{
+  "sys": {"mac": "11:22:33:44:55:66"},
+  "pm1:0": {
+    "id": 0,
+    "voltage": 229.0,
+    "current": 0.1,
+    "apower": 8.5,
+    "aprtpower": 9.0,
+    "pf": 0.94,
+    "freq": 50.0,
+    "aenergy": {"total": 10.0},
+    "ret_aenergy": {"total": 0.0}
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "sys": {"mac": "22:33:44:55:66:77"},
+  "em1:2": {
+    "id": 2,
+    "voltage": 231.0,
+    "current": 0.5,
+    "act_power": 115.5,
+    "aprt_power": 116.0,
+    "pf": 0.996,
+    "freq": 50.0,
+    "act_energy": 25.0,
+    "act_ret_energy": 1.0
+  },
+  "em1data:2": {
+    "id": 2,
+    "total_act_energy": 25.0,
+    "total_act_ret_energy": 1.0
+  }
+}

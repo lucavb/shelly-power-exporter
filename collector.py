@@ -1,137 +1,124 @@
+"""Poll Shelly RPC devices and atomically publish fresh snapshots."""
+
 import logging
+import time
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from aioshelly.rpc_device import RpcDevice
 
-from config import RECONNECT_AFTER_POLL_FAILURES, STALE_AFTER_FAILURES
-from metrics import (
-    register_device_channel,
-    reset_instant_metrics,
-    shelly_current_amperes,
-    shelly_energy_returned_watthours_total,
-    shelly_energy_watthours_total,
-    shelly_frequency_hertz,
-    shelly_info,
-    shelly_power_watts,
-    shelly_switch_on,
-    shelly_temperature_celsius,
-    shelly_up,
-    shelly_uptime_seconds,
-    shelly_voltage_volts,
-    shelly_wifi_rssi_dbm,
-)
+from config import RECONNECT_AFTER_POLL_FAILURES
+from metrics import snapshot_collector
 
 logger = logging.getLogger(__name__)
-
 _consecutive_failures = 0
+_total_failures = 0
 
 
 def reset_poll_failure_counter() -> None:
-    """Clear consecutive poll failure count (call after a new connection is established)."""
     global _consecutive_failures
     _consecutive_failures = 0
 
 
 @dataclass(frozen=True)
 class PollResult:
-    """Outcome of a single poll cycle."""
-
     ok: bool
     recycle_connection: bool
     consecutive_poll_failures: int = 0
 
 
-async def collect_metrics(device: RpcDevice) -> PollResult:
-    """Poll device and update Prometheus metrics."""
-    global _consecutive_failures
+_DEVICE_ERRORS = ("overtemp", "overpower", "overvoltage", "undervoltage", "overcurrent")
 
-    # Get MAC address from status if available, otherwise use hostname as fallback
-    mac = device.status.get("sys", {}).get("mac") or device.hostname
 
+def _device_errors(status: Mapping[str, Any]) -> dict[tuple[str, str, str], float]:
+    """Expose recognized flags per component without merging across components."""
+    result: dict[tuple[str, str, str], float] = {}
+    for component, data in status.items():
+        if not isinstance(data, Mapping):
+            continue
+        component_type, separator, component_id = component.partition(":")
+        if not separator or component_type not in {
+            "switch",
+            "pm1",
+            "em1",
+            "em1data",
+            "em",
+            "emdata",
+            "cover",
+            "input",
+        }:
+            continue
+        for error in _DEVICE_ERRORS:
+            result[(component_type, component_id, error)] = 0.0
+        errors = data.get("errors", [])
+        if isinstance(errors, list):
+            for error in errors:
+                if isinstance(error, str) and error.lower() in _DEVICE_ERRORS:
+                    result[(component_type, component_id, error.lower())] = 1.0
+        for error in _DEVICE_ERRORS:
+            if data.get(error) is True:
+                result[(component_type, component_id, error)] = 1.0
+    return result
+
+
+async def collect_metrics(device: RpcDevice, target: str | None = None) -> PollResult:
+    """Fetch one fresh GetStatus response (not poll()'s merged top-level status)."""
+    global _consecutive_failures, _total_failures
+    target = target if target is not None else str(device.ip_address)
+    started = time.monotonic()
     try:
-        await device.poll()
+        previous_mac = snapshot_collector.get_device_mac(target)
+    except Exception:
+        previous_mac = None
+    try:
+        response = await device.call_rpc("Shelly.GetStatus")
+        status = response.get("result", response) if isinstance(response, Mapping) else None
+        if not isinstance(status, Mapping):
+            raise ValueError("Shelly.GetStatus response is not a status object")
+        mac = status.get("sys", {}).get("mac") or previous_mac
         _consecutive_failures = 0
-        # Update MAC if it changed or was missing
-        mac = device.status.get("sys", {}).get("mac") or device.hostname
-        shelly_up.labels(device=mac).set(1)
-    except Exception as e:
+        now = time.time()
+        info = (
+            {
+                "model": str(device.model or "unknown"),
+                "firmware": str(device.firmware_version or "unknown"),
+                "name": str(device.name or "unknown"),
+                "mac": str(mac),
+            }
+            if mac is not None
+            else {}
+        )
+        snapshot_collector.set_success(
+            target,
+            str(mac) if mac is not None else None,
+            status,
+            info,
+            now,
+            time.monotonic() - started,
+            _device_errors(status) if mac is not None else {},
+            _total_failures,
+        )
+        logger.debug("Updated metrics for device %s", mac)
+        return PollResult(ok=True, recycle_connection=False)
+    except Exception as error:
         _consecutive_failures += 1
         logger.error(
-            "Error polling device %s (failure %d/%d): %s",
-            device.ip_address,
+            "Error polling device %s (failure %d; %s)",
+            target,
             _consecutive_failures,
-            STALE_AFTER_FAILURES,
-            e,
+            type(error).__name__,
         )
-        shelly_up.labels(device=mac).set(0)
-
-        if STALE_AFTER_FAILURES > 0 and _consecutive_failures >= STALE_AFTER_FAILURES:
-            logger.warning("Resetting instant metrics after %d failures", _consecutive_failures)
-            reset_instant_metrics(mac)
-
+        _total_failures += 1
+        snapshot_collector.set_health(
+            target,
+            False,
+            previous_mac,
+            failure_count=_total_failures,
+            duration=time.monotonic() - started,
+        )
         recycle = (
             RECONNECT_AFTER_POLL_FAILURES > 0
             and _consecutive_failures >= RECONNECT_AFTER_POLL_FAILURES
         )
-        return PollResult(
-            ok=False,
-            recycle_connection=recycle,
-            consecutive_poll_failures=_consecutive_failures,
-        )
-
-    # Update metrics from device status
-    status = device.status
-
-    # Device Info
-    shelly_info.labels(device=mac).info(
-        {
-            "model": device.model,
-            "firmware": device.firmware_version,
-            "name": device.name or "unknown",
-            "mac": mac,
-        }
-    )
-
-    # WiFi Data
-    wifi = status.get("wifi", {})
-    if wifi:
-        shelly_wifi_rssi_dbm.labels(device=mac).set(wifi.get("rssi", 0))
-
-    # System Data
-    sys_status = status.get("sys", {})
-    if sys_status:
-        shelly_uptime_seconds.labels(device=mac).set(sys_status.get("uptime", 0))
-
-    # Iterate over all components in status
-    for key, data in status.items():
-        # Handle all switches (switch:0, switch:1, etc.)
-        if key.startswith("switch:"):
-            try:
-                channel = key.split(":")[1]
-                register_device_channel(mac, channel)
-
-                labels = {"device": mac, "channel": channel}
-                shelly_switch_on.labels(**labels).set(1 if data.get("output") else 0)
-                shelly_power_watts.labels(**labels).set(data.get("apower", 0))
-                shelly_voltage_volts.labels(**labels).set(data.get("voltage", 0))
-                shelly_current_amperes.labels(**labels).set(data.get("current", 0))
-                shelly_frequency_hertz.labels(**labels).set(data.get("freq", 0))
-
-                aenergy = data.get("aenergy", {})
-                if aenergy:
-                    shelly_energy_watthours_total.labels(**labels).set(aenergy.get("total", 0))
-
-                ret_aenergy = data.get("ret_aenergy", {})
-                if ret_aenergy:
-                    shelly_energy_returned_watthours_total.labels(**labels).set(
-                        ret_aenergy.get("total", 0)
-                    )
-
-                temp = data.get("temperature", {})
-                if temp:
-                    shelly_temperature_celsius.labels(**labels).set(temp.get("tC", 0))
-            except (IndexError, ValueError) as e:
-                logger.error("Error parsing channel from key %s: %s", key, e)
-
-    logger.debug("Updated metrics for device %s", mac)
-    return PollResult(ok=True, recycle_connection=False, consecutive_poll_failures=0)
+        return PollResult(False, recycle, _consecutive_failures)

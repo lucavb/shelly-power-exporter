@@ -1,0 +1,13 @@
+{
+  "sys": {"mac": "aa:bb:cc:dd:ee:ff", "uptime": 120},
+  "switch:0": {
+    "output": true,
+    "apower": 42.5,
+    "voltage": 230.0,
+    "current": 0.2,
+    "freq": 50.0,
+    "aenergy": {"total": 100.0},
+    "ret_aenergy": {"total": 2.0},
+    "temperature": {"tC": 41.5}
+  }
+}

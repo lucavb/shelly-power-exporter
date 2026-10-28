@@ -8,7 +8,6 @@ import time
 import aiohttp
 from aioshelly.common import ConnectionOptions
 from aioshelly.rpc_device import RpcDevice
-from prometheus_client import start_http_server
 
 from collector import collect_metrics, reset_poll_failure_counter
 from config import (
@@ -19,9 +18,11 @@ from config import (
     RECONNECT_BACKOFF_MAX_SECONDS,
     RECONNECT_BACKOFF_SECONDS,
     SCRAPE_INTERVAL,
+    get_shelly_credentials,
     get_shelly_host,
     setup_logging,
 )
+from metrics import snapshot_collector, start_metrics_server
 from version import get_version
 
 setup_logging()
@@ -51,7 +52,12 @@ async def _sleep_until_shutdown(seconds: float) -> None:
 
 async def main_loop(shelly_host: str) -> None:
     """Main loop: connect, poll, recycle connection on repeated failures."""
-    options = ConnectionOptions(ip_address=shelly_host)
+    username, password = get_shelly_credentials()
+    options = ConnectionOptions(
+        ip_address=shelly_host,
+        username=username,
+        password=password,
+    )
     start_monotonic = time.monotonic()
     last_poll_success: float | None = None
     reconnect_backoff = float(RECONNECT_BACKOFF_SECONDS)
@@ -61,13 +67,19 @@ async def main_loop(shelly_host: str) -> None:
     async with aiohttp.ClientSession() as session:
         while not shutdown_event.is_set():
             if device is None:
+                snapshot_collector.set_initial_health(shelly_host, False)
                 try:
                     logger.info("Connecting to Shelly device at %s", shelly_host)
                     device = await RpcDevice.create(session, None, options)
+                    assert device is not None
                     await device.initialize()
                 except Exception as e:
                     init_failures += 1
-                    logger.error("Failed to initialize Shelly device: %s", e)
+                    logger.error("Failed to initialize Shelly device (%s)", type(e).__name__)
+                    if device is not None:
+                        with contextlib.suppress(Exception):
+                            await device.shutdown()
+                        device = None
                     if (
                         EXIT_AFTER_CONSECUTIVE_INIT_FAILURES > 0
                         and init_failures >= EXIT_AFTER_CONSECUTIVE_INIT_FAILURES
@@ -77,7 +89,11 @@ async def main_loop(shelly_host: str) -> None:
                             init_failures,
                         )
                         sys.exit(1)
+                    _fatal_no_poll_success(start_monotonic, last_poll_success)
                     await _sleep_until_shutdown(reconnect_backoff)
+                    if shutdown_event.is_set():
+                        break
+                    _fatal_no_poll_success(start_monotonic, last_poll_success)
                     reconnect_backoff = min(
                         reconnect_backoff * 2,
                         float(RECONNECT_BACKOFF_MAX_SECONDS),
@@ -95,11 +111,11 @@ async def main_loop(shelly_host: str) -> None:
                 )
 
             assert device is not None
-            poll_result = await collect_metrics(device)
-            _fatal_no_poll_success(start_monotonic, last_poll_success)
+            poll_result = await collect_metrics(device, shelly_host)
 
             if poll_result.ok:
                 last_poll_success = time.monotonic()
+                _fatal_no_poll_success(start_monotonic, last_poll_success)
             elif poll_result.recycle_connection:
                 logger.warning(
                     "Recycling Shelly connection after %d consecutive poll failures (threshold %d)",
@@ -110,16 +126,21 @@ async def main_loop(shelly_host: str) -> None:
                     await device.shutdown()
                 device = None
                 reset_poll_failure_counter()
-                await _sleep_until_shutdown(float(RECONNECT_BACKOFF_SECONDS))
+                await _sleep_until_shutdown(reconnect_backoff)
+                if shutdown_event.is_set():
+                    break
+                _fatal_no_poll_success(start_monotonic, last_poll_success)
                 continue
 
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(shutdown_event.wait(), timeout=SCRAPE_INTERVAL)
 
-            _fatal_no_poll_success(start_monotonic, last_poll_success)
+            if not shutdown_event.is_set():
+                _fatal_no_poll_success(start_monotonic, last_poll_success)
 
         if device is not None:
-            await device.shutdown()
+            with contextlib.suppress(Exception):
+                await device.shutdown()
             logger.info("Device connection shut down")
 
 
@@ -128,6 +149,11 @@ def main() -> None:
     shelly_host = get_shelly_host()
     if not shelly_host:
         logger.error("SHELLY_HOST environment variable is required")
+        sys.exit(1)
+    try:
+        get_shelly_credentials()
+    except ValueError as error:
+        logger.error("Invalid Shelly authentication configuration: %s", error)
         sys.exit(1)
 
     logger.info("Starting Shelly Plug Exporter v%s", get_version())
@@ -152,7 +178,7 @@ def main() -> None:
             EXIT_AFTER_CONSECUTIVE_INIT_FAILURES,
         )
 
-    start_http_server(METRICS_PORT)
+    start_metrics_server(METRICS_PORT)
     logger.info("Prometheus metrics server started on port %d", METRICS_PORT)
 
     loop = asyncio.new_event_loop()

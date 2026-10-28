@@ -10,13 +10,35 @@ def setup_logging() -> logging.Logger:
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    # aioshelly logs raw RPC frames at DEBUG; authenticated frames can include a
+    # digest Authorization value. Keep that protocol logger out of DEBUG mode.
+    logging.getLogger("aioshelly.rpc_device.wsrpc").setLevel(logging.INFO)
     return logging.getLogger(__name__)
 
 
 SHELLY_HOST = os.environ.get("SHELLY_HOST")
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9102"))
 SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL", "15"))
-STALE_AFTER_FAILURES = int(os.environ.get("STALE_AFTER_FAILURES", "3"))
+# Deprecated and intentionally ignored. Use METRICS_MAX_AGE_SECONDS for time-based expiry.
+if "STALE_AFTER_FAILURES" in os.environ:
+    logging.getLogger(__name__).warning(
+        "STALE_AFTER_FAILURES is deprecated and ignored; use METRICS_MAX_AGE_SECONDS"
+    )
+METRICS_MAX_AGE_SECONDS = int(os.environ.get("METRICS_MAX_AGE_SECONDS", "45"))
+if METRICS_MAX_AGE_SECONDS < 0:
+    raise ValueError("METRICS_MAX_AGE_SECONDS must be non-negative")
+SHELLY_USERNAME = os.environ.get("SHELLY_USERNAME")
+SHELLY_PASSWORD = os.environ.get("SHELLY_PASSWORD")
+
+
+def get_shelly_credentials() -> tuple[str | None, str | None]:
+    """Return credentials; a password alone uses Shelly's default admin username."""
+    if SHELLY_USERNAME and not SHELLY_PASSWORD:
+        raise ValueError("SHELLY_USERNAME requires SHELLY_PASSWORD")
+    if not SHELLY_PASSWORD:
+        return None, None
+    return SHELLY_USERNAME or "admin", SHELLY_PASSWORD
+
 
 # After this many consecutive failed polls, shut down RpcDevice and reconnect (0 = never).
 RECONNECT_AFTER_POLL_FAILURES = int(os.environ.get("RECONNECT_AFTER_POLL_FAILURES", "5"))

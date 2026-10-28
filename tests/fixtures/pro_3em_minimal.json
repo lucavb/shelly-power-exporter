@@ -1,0 +1,30 @@
+{
+  "em:0": {
+    "id": 0,
+    "a_voltage": 230.2,
+    "a_current": 1.1,
+    "a_act_power": 253.2,
+    "a_aprt_power": 253.3,
+    "a_pf": 1.0,
+    "b_voltage": 229.8,
+    "b_current": 2.0,
+    "b_act_power": 459.6,
+    "b_aprt_power": 459.7,
+    "b_pf": 1.0,
+    "c_voltage": 231.0,
+    "c_current": 0.5,
+    "c_act_power": 115.5,
+    "c_aprt_power": 115.6,
+    "c_pf": 1.0,
+    "total_act_power": 828.3,
+    "total_aprt_power": 828.6
+  },
+  "emdata:0": {
+    "id": 0,
+    "a_total_act_energy": 1200.0,
+    "b_total_act_energy": 2300.0,
+    "c_total_act_energy": 3400.0,
+    "total_act": 6900.0,
+    "total_act_ret": 12.0
+  }
+}
