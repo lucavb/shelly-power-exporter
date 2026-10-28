@@ -31,7 +31,7 @@ package = true
 
 [dependency-groups]
 dev = [
-    "pyright>=1.1.409",
+    "pyright>=1.1.414",
     "ruff>=0.15.12",
 ]
 
