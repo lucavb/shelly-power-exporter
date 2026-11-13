@@ -21,6 +21,11 @@ uv run shelly-power-exporter
 
 ### Using Docker
 
+The metrics endpoint has no authentication and listens on all interfaces by default. The
+`-p 9102:9102` option publishes it on all host interfaces as well. Restrict
+published ports to trusted monitoring networks and configure your host/network
+firewall to block other access.
+
 ```bash
 docker run -d \
   --name shelly-exporter \
@@ -78,6 +83,8 @@ administrators; use your platform's secret-management facilities where available
 If the Shelly RPC session gets into a bad state (for example repeated `Not connected` errors), the exporter recreates the device after `RECONNECT_AFTER_POLL_FAILURES` consecutive poll failures. Failed reconnects use exponential backoff between attempts.
 
 To let the orchestrator restart the process when the device stays unreachable, set `EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS` and/or `EXIT_AFTER_CONSECUTIVE_INIT_FAILURES` to positive values.
+
+The time-based exit bounds reconnect and scrape waits, but an in-flight connection or poll operation can delay the exit beyond the configured limit.
 
 ## Metrics
 

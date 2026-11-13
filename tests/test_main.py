@@ -172,6 +172,98 @@ def test_no_poll_success_limit_uses_monotonic_time(monkeypatch: pytest.MonkeyPat
     assert error.value.code == 1
 
 
+@pytest.mark.parametrize("wait_kind", ["init_retry", "poll_recycle", "scrape"])
+def test_watchdog_bounds_reconnect_and_scrape_waits(
+    monkeypatch: pytest.MonkeyPatch, wait_kind: str
+) -> None:
+    monkeypatch.setattr(main, "get_shelly_credentials", lambda: (None, None))
+    monkeypatch.setattr(main, "RECONNECT_BACKOFF_SECONDS", 20)
+    monkeypatch.setattr(main, "RECONNECT_BACKOFF_MAX_SECONDS", 20)
+    monkeypatch.setattr(main, "SCRAPE_INTERVAL", 30)
+    monkeypatch.setattr(main, "EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS", 5)
+    monkeypatch.setattr(main, "EXIT_AFTER_CONSECUTIVE_INIT_FAILURES", 0)
+    monkeypatch.setattr(
+        main,
+        "snapshot_collector",
+        type(
+            "Snapshot",
+            (),
+            {
+                "set_initial_health": lambda *_args: None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(main, "reset_poll_failure_counter", lambda: None)
+
+    clock = [10.0]
+    monkeypatch.setattr(main.time, "monotonic", lambda: clock[0])
+    sleep_durations: list[float] = []
+
+    async def capture_sleep(seconds: float) -> None:
+        sleep_durations.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(main, "_sleep_until_shutdown", capture_sleep)
+
+    class Device:
+        name = model = firmware_version = "device"
+
+        @classmethod
+        async def create(cls, session: Any, device: Any, options: Any) -> Device:
+            return cls()
+
+        async def initialize(self) -> None:
+            if wait_kind == "init_retry":
+                raise RuntimeError("init failure")
+
+        async def shutdown(self) -> None:
+            return None
+
+    async def failed_poll(device: Any, target: str) -> Any:
+        return type(
+            "Result",
+            (),
+            {
+                "ok": False,
+                "recycle_connection": wait_kind == "poll_recycle",
+                "consecutive_poll_failures": 1,
+            },
+        )()
+
+    monkeypatch.setattr(main, "RpcDevice", Device)
+    monkeypatch.setattr(main, "collect_metrics", failed_poll)
+    main.shutdown_event = asyncio.Event()
+
+    with pytest.raises(SystemExit) as error:
+        asyncio.run(main.main_loop("shelly.local"))
+
+    assert error.value.code == 1
+    assert sleep_durations == [5]
+
+
+def test_watchdog_sleep_preserves_disabled_and_shutdown_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleep_durations: list[float] = []
+
+    async def capture_sleep(seconds: float) -> None:
+        sleep_durations.append(seconds)
+
+    monkeypatch.setattr(main, "_sleep_until_shutdown", capture_sleep)
+    monkeypatch.setattr(main, "EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS", 0)
+    main.shutdown_event = asyncio.Event()
+
+    async def exercise() -> None:
+        await main._sleep_with_watchdog(7, 0, None)
+        monkeypatch.setattr(main, "EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS", 1)
+        main.shutdown_event.set()
+        await main._sleep_with_watchdog(8, 0, None)
+
+    asyncio.run(exercise())
+
+    assert sleep_durations == [7]
+
+
 def test_repeated_init_failures_obey_elapsed_fatal_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

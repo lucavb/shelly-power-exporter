@@ -19,6 +19,8 @@ def setup_logging() -> logging.Logger:
 SHELLY_HOST = os.environ.get("SHELLY_HOST")
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9102"))
 SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL", "15"))
+if SCRAPE_INTERVAL <= 0:
+    raise ValueError("SCRAPE_INTERVAL must be greater than zero")
 # Deprecated and intentionally ignored. Use METRICS_MAX_AGE_SECONDS for time-based expiry.
 if "STALE_AFTER_FAILURES" in os.environ:
     logging.getLogger(__name__).warning(
@@ -45,6 +47,16 @@ RECONNECT_AFTER_POLL_FAILURES = int(os.environ.get("RECONNECT_AFTER_POLL_FAILURE
 # Exponential backoff between reconnect attempts (seconds).
 RECONNECT_BACKOFF_SECONDS = int(os.environ.get("RECONNECT_BACKOFF_SECONDS", "2"))
 RECONNECT_BACKOFF_MAX_SECONDS = int(os.environ.get("RECONNECT_BACKOFF_MAX_SECONDS", "120"))
+if RECONNECT_BACKOFF_SECONDS <= 0:
+    raise ValueError("RECONNECT_BACKOFF_SECONDS must be greater than zero")
+if RECONNECT_BACKOFF_MAX_SECONDS <= 0:
+    raise ValueError("RECONNECT_BACKOFF_MAX_SECONDS must be greater than zero")
+if RECONNECT_BACKOFF_SECONDS > RECONNECT_BACKOFF_MAX_SECONDS:
+    raise ValueError(
+        "RECONNECT_BACKOFF_SECONDS must be less than or equal to RECONNECT_BACKOFF_MAX_SECONDS"
+    )
+if RECONNECT_AFTER_POLL_FAILURES < 0:
+    raise ValueError("RECONNECT_AFTER_POLL_FAILURES must be non-negative (0 disables reconnect)")
 
 # Exit non-zero if there has been no successful poll for this many seconds (0 = never).
 EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS = int(
@@ -54,6 +66,14 @@ EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS = int(
 EXIT_AFTER_CONSECUTIVE_INIT_FAILURES = int(
     os.environ.get("EXIT_AFTER_CONSECUTIVE_INIT_FAILURES", "0")
 )
+if EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS < 0:
+    raise ValueError(
+        "EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS must be non-negative (0 disables this limit)"
+    )
+if EXIT_AFTER_CONSECUTIVE_INIT_FAILURES < 0:
+    raise ValueError(
+        "EXIT_AFTER_CONSECUTIVE_INIT_FAILURES must be non-negative (0 disables this limit)"
+    )
 
 
 def get_shelly_host() -> str | None:

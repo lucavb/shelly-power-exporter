@@ -22,8 +22,8 @@
     },
     {
       "matchManagers": ["dockerfile"],
-      "groupName": "docker images"
+      "groupName": "docker images",
+      "semanticCommitType": "fix"
     }
   ]
 }
-

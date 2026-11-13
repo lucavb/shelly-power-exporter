@@ -1,9 +1,7 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - main
+  workflow_call:
 
 env:
   REGISTRY: ghcr.io
@@ -12,15 +10,17 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
-    concurrency: release
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
-      id-token: write
       contents: write
       packages: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -29,30 +29,93 @@ jobs:
           python-version: "3.15"
 
       - name: Install python-semantic-release
-        run: pip install python-semantic-release
+        run: pip install python-semantic-release==10.7.0
 
-      - name: Get latest tag before release
+      - name: Check main and prepare checkout
+        id: candidate
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "Checkout does not match CI commit" >&2
+            exit 1
+          fi
+          git fetch --force --prune --prune-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          remote_main="$(git ls-remote --heads origin refs/heads/main)"
+          if [[ ! "$remote_main" =~ ^[0-9a-f]{40}[[:space:]]refs/heads/main$ ]]; then
+            echo "Could not identify remote main" >&2
+            exit 1
+          fi
+          if [[ "${remote_main%%$'\t'*}" != "$GITHUB_SHA" ]]; then
+            echo "Main moved since this CI run; skipping release."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # PSR requires a branch rather than a detached HEAD; retain the tested SHA.
+          git switch -C main "$GITHUB_SHA"
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+
+      - name: Get exact tag before release
+        if: steps.candidate.outputs.eligible == 'true'
         id: before
-        run: echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo 'none')" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          tags=()
+          tag_list="$(git tag --points-at "$GITHUB_SHA" --list 'v*')"
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              tags+=("$tag")
+            fi
+          done <<< "$tag_list"
+          if (( ${#tags[@]} > 1 )); then
+            echo "Multiple stable tags point to the CI commit" >&2
+            exit 1
+          fi
+          echo "tag=${tags[0]:-}" >> "$GITHUB_OUTPUT"
 
       - name: Semantic Release
+        if: steps.candidate.outputs.eligible == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: semantic-release version --tag --vcs-release --no-commit --no-changelog --skip-build
 
-      - name: Get latest tag after release
+      - name: Select and verify the new remote tag
+        if: steps.candidate.outputs.eligible == 'true'
         id: after
+        env:
+          BEFORE_TAG: ${{ steps.before.outputs.tag }}
         run: |
-          git fetch --tags
-          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo 'none')
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          VERSION=${TAG#v}
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$TAG" != "${{ steps.before.outputs.tag }}" ]; then
-            echo "released=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "released=false" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          tags=()
+          tag_list="$(git tag --points-at "$GITHUB_SHA" --list 'v*')"
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              tags+=("$tag")
+            fi
+          done <<< "$tag_list"
+          if (( ${#tags[@]} > 1 )); then
+            echo "Multiple stable tags point to the CI commit" >&2
+            exit 1
           fi
+          tag="${tags[0]:-}"
+          if [[ -z "$tag" || "$tag" == "$BEFORE_TAG" ]]; then
+            echo "No new release tag was created."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          remote_refs="$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+          direct="$(awk -F '\t' -v ref="refs/tags/$tag" '$2 == ref {print $1}' <<< "$remote_refs")"
+          peeled="$(awk -F '\t' -v ref="refs/tags/$tag^{}" '$2 == ref {print $1}' <<< "$remote_refs")"
+          if [[ ! "$direct" =~ ^[0-9a-f]{40}$ ]] || \
+             [[ -n "$peeled" && ! "$peeled" =~ ^[0-9a-f]{40}$ ]] || \
+             [[ "${peeled:-$direct}" != "$GITHUB_SHA" ]]; then
+            echo "Remote tag $tag does not uniquely resolve to the CI commit" >&2
+            exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+            echo "released=true"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         if: steps.after.outputs.released == 'true'
