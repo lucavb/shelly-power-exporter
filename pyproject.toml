@@ -48,9 +48,7 @@ pythonVersion = "3.15"
 typeCheckingMode = "basic"
 
 [tool.semantic_release]
-version_source = "tag"
 tag_format = "v{version}"
-commit = false
 
 [tool.semantic_release.remote]
 type = "github"

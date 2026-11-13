@@ -31,23 +31,40 @@ logger = logging.getLogger(__name__)
 shutdown_event = asyncio.Event()
 
 
-def _fatal_no_poll_success(start_monotonic: float, last_poll_success: float | None) -> None:
+def _remaining_no_poll_success_seconds(
+    start_monotonic: float, last_poll_success: float | None
+) -> float | None:
     limit = EXIT_AFTER_SECONDS_WITHOUT_POLL_SUCCESS
     if limit <= 0:
-        return
+        return None
     now = time.monotonic()
     reference = last_poll_success if last_poll_success is not None else start_monotonic
-    if now - reference >= limit:
+    remaining = limit - (now - reference)
+    if remaining <= 0:
         logger.critical(
             "No successful poll within %d seconds; exiting for process restart",
             limit,
         )
         sys.exit(1)
+    return remaining
+
+
+def _fatal_no_poll_success(start_monotonic: float, last_poll_success: float | None) -> None:
+    _remaining_no_poll_success_seconds(start_monotonic, last_poll_success)
 
 
 async def _sleep_until_shutdown(seconds: float) -> None:
     with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(shutdown_event.wait(), timeout=seconds)
+
+
+async def _sleep_with_watchdog(
+    seconds: float, start_monotonic: float, last_poll_success: float | None
+) -> None:
+    if shutdown_event.is_set():
+        return
+    remaining = _remaining_no_poll_success_seconds(start_monotonic, last_poll_success)
+    await _sleep_until_shutdown(seconds if remaining is None else min(seconds, remaining))
 
 
 async def main_loop(shelly_host: str) -> None:
@@ -89,8 +106,9 @@ async def main_loop(shelly_host: str) -> None:
                             init_failures,
                         )
                         sys.exit(1)
-                    _fatal_no_poll_success(start_monotonic, last_poll_success)
-                    await _sleep_until_shutdown(reconnect_backoff)
+                    await _sleep_with_watchdog(
+                        reconnect_backoff, start_monotonic, last_poll_success
+                    )
                     if shutdown_event.is_set():
                         break
                     _fatal_no_poll_success(start_monotonic, last_poll_success)
@@ -126,14 +144,13 @@ async def main_loop(shelly_host: str) -> None:
                     await device.shutdown()
                 device = None
                 reset_poll_failure_counter()
-                await _sleep_until_shutdown(reconnect_backoff)
+                await _sleep_with_watchdog(reconnect_backoff, start_monotonic, last_poll_success)
                 if shutdown_event.is_set():
                     break
                 _fatal_no_poll_success(start_monotonic, last_poll_success)
                 continue
 
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(shutdown_event.wait(), timeout=SCRAPE_INTERVAL)
+            await _sleep_with_watchdog(SCRAPE_INTERVAL, start_monotonic, last_poll_success)
 
             if not shutdown_event.is_set():
                 _fatal_no_poll_success(start_monotonic, last_poll_success)

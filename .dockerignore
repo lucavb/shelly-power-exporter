@@ -1,0 +1,53 @@
+# Source-control metadata and developer environments
+.git
+.git/**
+.venv
+.venv/**
+**/.venv
+**/.venv/**
+
+# Local credentials and secret material
+.env
+.env.*
+**/.env
+**/.env.*
+.aws
+.aws/**
+**/.aws
+**/.aws/**
+.ssh
+.ssh/**
+**/.ssh
+**/.ssh/**
+secrets
+secrets/**
+**/secrets
+**/secrets/**
+*.pem
+*.key
+*.p12
+*.pfx
+*.secret
+
+# Local caches and generated artifacts
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.pyright
+.cache
+.cache/**
+.coverage
+.coverage.*
+htmlcov
+build
+dist
+*.egg-info
+.DS_Store
+
+# Not used by the Dockerfile or package installation
+tests
+docs
+.github
