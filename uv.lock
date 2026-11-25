@@ -81,7 +81,7 @@ wheels = [
 
 [[package]]
 name = "aioshelly"
-version = "14.5.0"
+version = "14.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -92,9 +92,9 @@ dependencies = [
     { name = "yarl" },
     { name = "zeroconf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/36/2a08651604402b1e09201147d2cee07c7557b70664164173d750d42ff699/aioshelly-14.5.0.tar.gz", hash = "sha256:528c5f0b5042a22db9e2674ffead3c0505c6128c6c7dafa96dd444c5fe7225d3", size = 60134, upload-time = "2026-11-22T21:05:13.921Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/d1/c8810c99c3070144527745d5b39063f1879e208faaf6d9999d2d29af795e/aioshelly-14.6.0.tar.gz", hash = "sha256:f37c9bce36accdc9d9f1e238c93a088df9373d1820e6af2e7295a5890276c292", size = 60245, upload-time = "2026-11-25T10:11:14.066Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/25/1468123dabed923be39b0933607fb7c62705681eee8ba66cfb36c27b2008/aioshelly-14.5.0-py3-none-any.whl", hash = "sha256:c9647f8a9d72bd5a560d3083b9246e783d47c907a9c6587ea17290198fc36298", size = 60199, upload-time = "2026-11-22T21:05:12.495Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/d9/389f367dc278f4ea5619ef613c461590fb35bb6c261c9b9bf15a8d059d4c/aioshelly-14.6.0-py3-none-any.whl", hash = "sha256:262345a76548a674137c33fcc25842c34245c147e7995af1286f8d15320aae82", size = 60310, upload-time = "2026-11-25T10:11:12.713Z" },
 ]
 
 [[package]]
@@ -693,7 +693,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.14.5" },
-    { name = "aioshelly", specifier = ">=14.3.0" },
+    { name = "aioshelly", specifier = ">=14.6.0" },
     { name = "prometheus-client", specifier = ">=0.26.0" },
 ]
 
