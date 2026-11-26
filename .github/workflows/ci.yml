@@ -69,7 +69,7 @@ jobs:
           set -euo pipefail
 
           cleanup() {
-            docker rm --force --time 5 shelly-power-exporter-smoke >/dev/null 2>&1 || true
+            docker rm --force shelly-power-exporter-smoke >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
@@ -78,7 +78,7 @@ jobs:
             local container="shelly-power-exporter-smoke"
             local metrics_file="${RUNNER_TEMP}/shelly-metrics.txt"
 
-            docker rm --force --time 5 "$container" >/dev/null 2>&1 || true
+            docker rm --force "$container" >/dev/null 2>&1 || true
             docker run --detach \
               --name "$container" \
               --publish 127.0.0.1:19102:9102 \
@@ -91,14 +91,14 @@ jobs:
               if ! docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null | grep -q true; then
                 echo "Container exited before the metrics endpoint became ready: $image" >&2
                 docker logs "$container" || true
-                docker rm --force --time 5 "$container" >/dev/null 2>&1 || true
+                docker rm --force "$container" >/dev/null 2>&1 || true
                 return 1
               fi
 
               if curl --max-time 2 --fail --silent http://127.0.0.1:19102/metrics >"$metrics_file" \
                 && grep -Fq 'shelly_target_up{target="127.0.0.1"} 0' "$metrics_file"; then
                 echo "Metrics endpoint passed for $image"
-                docker rm --force --time 5 "$container" >/dev/null
+                docker rm --force "$container" >/dev/null
                 return 0
               fi
               sleep 1
@@ -106,7 +106,7 @@ jobs:
 
             echo "Metrics endpoint did not become ready for $image" >&2
             docker logs "$container" || true
-            docker rm --force --time 5 "$container" >/dev/null 2>&1 || true
+            docker rm --force "$container" >/dev/null 2>&1 || true
             return 1
           }
 
